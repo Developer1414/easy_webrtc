@@ -1,0 +1,16 @@
+name: easy_webrtc_client
+description: Простой и мощный WebRTC-звонок для Flutter — управление медиасессией и сигналингом, с заменяемым транспортом.
+version: 0.1.0
+publish_to: 'none'
+environment:
+  sdk: ^3.13.0-103.1.beta
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_webrtc: ^1.5.2
+  web_socket_channel: ^3.0.3
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.6
