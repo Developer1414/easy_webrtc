@@ -93,12 +93,13 @@ class EasyRtcSession extends ChangeNotifier {
         )
       : null;
 
-  Widget? get remoteVideo => _isRemoteCameraOn
-      ? RTCVideoView(
-          _remoteRenderer,
-          objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-        )
-      : null;
+  Widget get remoteMediaView => Offstage(
+    offstage: !_isRemoteCameraOn,
+    child: RTCVideoView(
+      _remoteRenderer,
+      objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+    ),
+  );
 
   Future<void> connect() async {
     if (_isConnected || _isConnecting) return;
@@ -247,6 +248,11 @@ class EasyRtcSession extends ChangeNotifier {
   }
 
   Future<void> endCall() async {
+    await _releaseResources();
+    notifyListeners();
+  }
+
+  Future<void> _releaseResources() async {
     for (final track in _localStream?.getTracks() ?? <MediaStreamTrack>[]) {
       await track.stop();
     }
@@ -260,16 +266,19 @@ class EasyRtcSession extends ChangeNotifier {
 
     _localRenderer.srcObject = null;
     _remoteRenderer.srcObject = null;
-    notifyListeners();
   }
 
   @override
   void dispose() {
-    if (_isConnected) endCall();
+    for (final track in _localStream?.getTracks() ?? <MediaStreamTrack>[]) {
+      track.stop();
+    }
+    _peerConnection?.close();
+    _peerConnection?.dispose();
     _localRenderer.dispose();
     _remoteRenderer.dispose();
-    _peerConnection?.dispose();
     _signaling.dispose();
+
     super.dispose();
   }
 }

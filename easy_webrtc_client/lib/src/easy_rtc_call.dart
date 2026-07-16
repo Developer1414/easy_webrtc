@@ -50,7 +50,8 @@ class EasyRtcCall extends ChangeNotifier {
   bool get hasConnectionIssues => networkQuality != NetworkQuality.good;
 
   Widget? get localVideo => _session?.localVideo;
-  Widget? get remoteVideo => _session?.remoteVideo;
+  Widget get remoteMediaView =>
+      _session?.remoteMediaView ?? const SizedBox.shrink();
 
   /// Подключается к серверу, заходит в комнату [roomId] и захватывает
   /// локальные медиа. Вызови один раз в initState экрана звонка.
