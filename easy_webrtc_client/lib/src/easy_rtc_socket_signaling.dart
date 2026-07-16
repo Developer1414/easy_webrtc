@@ -17,7 +17,6 @@ class EasyRtcSocketSignaling implements EasyRtcSignaling {
   late final StreamSubscription<Map<String, dynamic>> _subscription;
 
   /// Сервер сообщил, что в комнате теперь двое и можно начинать звонок.
-  /// [isInitiator] — должна ли ЭТА сторона создавать offer.
   void Function(bool isInitiator)? onRoomReady;
 
   /// Партнёр покинул комнату / отключился
@@ -31,6 +30,8 @@ class EasyRtcSocketSignaling implements EasyRtcSignaling {
   void Function(bool isOn)? onRemoteCameraToggled;
   @override
   void Function(bool isOn)? onRemoteMicrophoneToggled;
+  @override
+  void Function(bool isOn)? onRemoteVolumeToggled;
 
   void _handleIncoming(Map<String, dynamic> event) {
     switch (event['type']) {
@@ -40,7 +41,10 @@ class EasyRtcSocketSignaling implements EasyRtcSignaling {
         onPartnerLeft?.call();
       case 'webrtc_sdp':
         onRemoteDescription?.call(
-          RTCSessionDescription(event['sdp'] as String, event['sdpType'] as String),
+          RTCSessionDescription(
+            event['sdp'] as String,
+            event['sdpType'] as String,
+          ),
         );
       case 'webrtc_ice':
         onRemoteIceCandidate?.call(
@@ -54,12 +58,18 @@ class EasyRtcSocketSignaling implements EasyRtcSignaling {
         onRemoteCameraToggled?.call(event['isOn'] as bool);
       case 'webrtc_microphone_toggled':
         onRemoteMicrophoneToggled?.call(event['isOn'] as bool);
+      case 'webrtc_volume_toggled':
+        onRemoteVolumeToggled?.call(event['isOn'] as bool);
     }
   }
 
   @override
   void sendDescription(RTCSessionDescription description) {
-    _client.send({'type': 'webrtc_sdp', 'sdp': description.sdp, 'sdpType': description.type});
+    _client.send({
+      'type': 'webrtc_sdp',
+      'sdp': description.sdp,
+      'sdpType': description.type,
+    });
   }
 
   @override
@@ -79,6 +89,10 @@ class EasyRtcSocketSignaling implements EasyRtcSignaling {
   @override
   void sendMicrophoneToggled(bool isOn) =>
       _client.send({'type': 'webrtc_microphone_toggled', 'isOn': isOn});
+
+  @override
+  void sendVolumeToggled(bool isOn) =>
+      _client.send({'type': 'webrtc_volume_toggled', 'isOn': isOn});
 
   @override
   void dispose() => _subscription.cancel();

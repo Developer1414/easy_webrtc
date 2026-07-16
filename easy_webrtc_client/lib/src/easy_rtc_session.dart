@@ -2,12 +2,9 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import 'easy_rtc_config.dart';
+import 'easy_rtc_network_quality.dart';
 import 'easy_rtc_signaling.dart';
 
-/// Ядро пакета: управляет PeerConnection, локальным/удалённым медиа-
-/// потоками и состоянием камеры/микрофона. Не знает о комнатах или
-/// пользователях — только о самом WebRTC-соединении и переданном
-/// сигналинге.
 class EasyRtcSession extends ChangeNotifier {
   EasyRtcSession({
     required EasyRtcSignaling signaling,
@@ -21,6 +18,10 @@ class EasyRtcSession extends ChangeNotifier {
     };
     _signaling.onRemoteMicrophoneToggled = (isOn) {
       _isRemoteMicrophoneOn = isOn;
+      notifyListeners();
+    };
+    _signaling.onRemoteVolumeToggled = (isOn) {
+      _isRemoteVolumeOn = isOn;
       notifyListeners();
     };
   }
@@ -42,24 +43,48 @@ class EasyRtcSession extends ChangeNotifier {
 
   bool _isMicrophoneOn = true;
   bool _isCameraOn = false;
+  bool _isVolumeOn = true;
+
   bool _isRemoteCameraOn = false;
   bool _isRemoteMicrophoneOn = true;
+  bool _isRemoteVolumeOn = true;
 
   RTCPeerConnectionState _connectionState =
       RTCPeerConnectionState.RTCPeerConnectionStateNew;
+  bool _hasEverConnected = false;
 
   bool get isConnected => _isConnected;
   bool get isMicrophoneOn => _isMicrophoneOn;
   bool get isCameraOn => _isCameraOn;
+  bool get isVolumeOn => _isVolumeOn;
+
   bool get isRemoteCameraOn => _isRemoteCameraOn;
   bool get isRemoteMicrophoneOn => _isRemoteMicrophoneOn;
+  bool get isRemoteVolumeOn => _isRemoteVolumeOn;
 
   RTCPeerConnectionState get connectionState => _connectionState;
   bool get isFullyConnected =>
-      _connectionState == RTCPeerConnectionState.RTCPeerConnectionStateConnected;
+      _connectionState ==
+      RTCPeerConnectionState.RTCPeerConnectionStateConnected;
 
-  /// Готовый виджет с локальным превью (или null, если камера не
-  /// запрошена/выключена)
+  /// Качество связи с партнёром. До первого успешного подключения
+  /// всегда good — чтобы не путать "ещё не подключились" с "испортилось".
+  NetworkQuality get networkQuality {
+    if (!_hasEverConnected) return NetworkQuality.good;
+
+    switch (_connectionState) {
+      case RTCPeerConnectionState.RTCPeerConnectionStateConnected:
+        return NetworkQuality.good;
+      case RTCPeerConnectionState.RTCPeerConnectionStateDisconnected:
+        return NetworkQuality.unstable;
+      case RTCPeerConnectionState.RTCPeerConnectionStateFailed:
+      case RTCPeerConnectionState.RTCPeerConnectionStateClosed:
+        return NetworkQuality.lost;
+      default:
+        return NetworkQuality.good;
+    }
+  }
+
   Widget? get localVideo => _hasVideoTrack
       ? RTCVideoView(
           _localRenderer,
@@ -68,8 +93,6 @@ class EasyRtcSession extends ChangeNotifier {
         )
       : null;
 
-  /// Готовый виджет с видео партнёра (или null, пока камера партнёра
-  /// выключена / поток ещё не пришёл)
   Widget? get remoteVideo => _isRemoteCameraOn
       ? RTCVideoView(
           _remoteRenderer,
@@ -77,9 +100,6 @@ class EasyRtcSession extends ChangeNotifier {
         )
       : null;
 
-  /// Захватывает медиа согласно [config], создаёт PeerConnection.
-  /// Идемпотентен: повторный вызов, пока предыдущий выполняется или уже
-  /// завершился, просто выходит без побочных эффектов.
   Future<void> connect() async {
     if (_isConnected || _isConnecting) return;
     _isConnecting = true;
@@ -100,6 +120,9 @@ class EasyRtcSession extends ChangeNotifier {
       _peerConnection!.onTrack = _handleRemoteTrack;
       _peerConnection!.onConnectionState = (state) {
         _connectionState = state;
+        if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
+          _hasEverConnected = true;
+        }
         notifyListeners();
       };
 
@@ -146,11 +169,18 @@ class EasyRtcSession extends ChangeNotifier {
   void _handleRemoteTrack(RTCTrackEvent event) {
     if (event.streams.isEmpty) return;
     _remoteStream = event.streams[0];
+
+    // Применяем уже выставленное локальное состояние "звук выключен" к
+    // только что пришедшему треку — важно, если toggleVolume() был
+    // вызван ДО того, как партнёр реально прислал медиапоток.
+    for (final track in _remoteStream!.getAudioTracks()) {
+      track.enabled = _isVolumeOn;
+    }
+
     _remoteRenderer.srcObject = _remoteStream;
     notifyListeners();
   }
 
-  /// Создаёт SDP offer. Вызывается стороной, инициирующей звонок.
   Future<void> startCall() async {
     if (!_requirePeerConnection('startCall')) return;
     final offer = await _peerConnection!.createOffer();
@@ -204,8 +234,18 @@ class EasyRtcSession extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Завершает звонок и освобождает ресурсы. Сессию после этого нужно
-  /// выбросить — для нового звонка создавай новую EasyRtcSession.
+  /// Выключает воспроизведение звука ПАРТНЁРА локально — на его трек
+  /// это никак не влияет, он продолжает слать аудио как обычно.
+  void toggleVolume() {
+    _isVolumeOn = !_isVolumeOn;
+    for (final track
+        in _remoteStream?.getAudioTracks() ?? const <MediaStreamTrack>[]) {
+      track.enabled = _isVolumeOn;
+    }
+    _signaling.sendVolumeToggled(_isVolumeOn);
+    notifyListeners();
+  }
+
   Future<void> endCall() async {
     for (final track in _localStream?.getTracks() ?? <MediaStreamTrack>[]) {
       await track.stop();

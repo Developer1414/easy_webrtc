@@ -11,10 +11,15 @@ abstract class EasyRtcSignaling {
   void Function(bool isOn)? onRemoteCameraToggled;
   void Function(bool isOn)? onRemoteMicrophoneToggled;
 
+  /// Партнёр включил/выключил у себя воспроизведение звука (не мьют
+  /// микрофона, а именно "не хочет вас слышать")
+  void Function(bool isOn)? onRemoteVolumeToggled;
+
   void sendDescription(RTCSessionDescription description);
   void sendIceCandidate(RTCIceCandidate candidate);
   void sendCameraToggled(bool isOn);
   void sendMicrophoneToggled(bool isOn);
+  void sendVolumeToggled(bool isOn);
 
   void dispose();
 }

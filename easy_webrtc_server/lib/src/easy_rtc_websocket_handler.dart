@@ -24,7 +24,7 @@ import 'room_store.dart';
 ///   плюс всё, что ретранслируется от партнёра
 class EasyRtcWebSocketHandler {
   EasyRtcWebSocketHandler({RoomStore? roomStore, this.resolveUserId})
-      : roomStore = roomStore ?? InMemoryRoomStore();
+    : roomStore = roomStore ?? InMemoryRoomStore();
 
   final RoomStore roomStore;
 
@@ -41,6 +41,7 @@ class EasyRtcWebSocketHandler {
     'webrtc_ice',
     'webrtc_camera_toggled',
     'webrtc_microphone_toggled',
+    'webrtc_volume_toggled',
   };
 
   /// Shelf-хендлер для монтирования на роут (обычно `GET /ws`)
@@ -103,7 +104,9 @@ class EasyRtcWebSocketHandler {
     if (_relayedEventTypes.contains(type)) {
       final roomId = await roomStore.roomOf(userId);
       if (roomId == null) return;
-      final others = (await roomStore.membersOf(roomId)).where((id) => id != userId);
+      final others = (await roomStore.membersOf(
+        roomId,
+      )).where((id) => id != userId);
       for (final otherId in others) {
         _sendTo(otherId, event);
       }
