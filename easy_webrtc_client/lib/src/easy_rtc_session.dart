@@ -32,6 +32,7 @@ class EasyRtcSession extends ChangeNotifier {
   RTCPeerConnection? _peerConnection;
   MediaStream? _localStream;
   MediaStream? _remoteStream;
+  MediaStreamTrack? _localVideoTrack;
 
   final RTCVideoRenderer _localRenderer = RTCVideoRenderer();
   final RTCVideoRenderer _remoteRenderer = RTCVideoRenderer();
@@ -219,7 +220,7 @@ class EasyRtcSession extends ChangeNotifier {
   Future<void> toggleCamera() async {
     if (_localStream == null || _peerConnection == null) return;
 
-    if (!_hasVideoTrack) {
+    if (_localVideoTrack == null) {
       final videoStream = await navigator.mediaDevices.getUserMedia({
         'video': {
           'facingMode': 'user',
@@ -231,24 +232,13 @@ class EasyRtcSession extends ChangeNotifier {
       final videoTracks = videoStream.getVideoTracks();
       if (videoTracks.isEmpty) return;
 
-      await _peerConnection!.addTrack(videoTracks.first, videoStream);
+      _localVideoTrack = videoTracks.first;
+      await _peerConnection!.addTrack(_localVideoTrack!, videoStream);
       _hasVideoTrack = true;
     }
 
     _isCameraOn = !_isCameraOn;
-    for (final track in _localStream!.getVideoTracks()) {
-      track.enabled = _isCameraOn;
-    }
-
-    final senders = await _peerConnection!.getSenders();
-    final videoTracks = senders
-        .where((sender) => sender.track?.kind == 'video')
-        .map((sender) => sender.track)
-        .whereType<MediaStreamTrack>();
-
-    for (final track in videoTracks) {
-      track.enabled = _isCameraOn;
-    }
+    _localVideoTrack!.enabled = _isCameraOn;
 
     _signaling.sendCameraToggled(_isCameraOn);
     notifyListeners();
@@ -289,6 +279,7 @@ class EasyRtcSession extends ChangeNotifier {
 
     _localStream = null;
     _remoteStream = null;
+    _localVideoTrack = null;
     _isCameraOn = false;
     _isRemoteCameraOn = false;
     _isConnected = false;

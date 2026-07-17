@@ -80,7 +80,9 @@ class EasyRtcCall extends ChangeNotifier {
     }
   }
 
-  void toggleCamera() => _session?.toggleCamera();
+  Future<void> toggleCamera() async {
+    await _session?.toggleCamera();
+  }
   void toggleMicrophone() => _session?.toggleMicrophone();
   void toggleVolume() => _session?.toggleVolume();
 
