@@ -30,6 +30,9 @@ class EasyRtcCall extends ChangeNotifier {
   /// Партнёр покинул звонок
   void Function()? onPartnerLeft;
 
+  /// Не удалось получить доступ к микрофону/камере
+  void Function(String message)? onMediaPermissionFailed;
+
   bool get isReady => _session?.isConnected ?? false;
   bool get isCallActive => _session?.isFullyConnected ?? false;
 
@@ -70,10 +73,17 @@ class EasyRtcCall extends ChangeNotifier {
       _session!.addListener(notifyListeners);
 
       await _session!.connect();
+      await _session!.requestMicrophonePermission();
 
       _signaling!.onRoomReady = (isInitiator) {
-        if (isInitiator) _session!.startCall();
+        if (isInitiator) {
+          _session!.startCall();
+        }
       };
+    } catch (_) {
+      onMediaPermissionFailed?.call(
+        'Нужен доступ к микрофону для участия в звонке.',
+      );
     } finally {
       _isJoining = false;
       notifyListeners();

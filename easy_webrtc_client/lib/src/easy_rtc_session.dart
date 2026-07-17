@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
@@ -41,6 +43,7 @@ class EasyRtcSession extends ChangeNotifier {
   bool _isConnecting = false;
   bool _hasVideoTrack = false;
   bool _hasAudioTrack = false;
+  bool _isPermissionPromptVisible = false;
 
   bool _isMicrophoneOn = true;
   bool _isCameraOn = false;
@@ -86,25 +89,26 @@ class EasyRtcSession extends ChangeNotifier {
     }
   }
 
-  Widget? get localVideo => _hasVideoTrack
-      ? RTCVideoView(
-          _localRenderer,
-          objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-          mirror: true,
-        )
-      : null;
+  Widget? get localVideo {
+    if (!_hasVideoTrack || _localRenderer.srcObject == null) {
+      return null;
+    }
+
+    return RTCVideoView(
+      _localRenderer,
+      objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+      mirror: true,
+    );
+  }
 
   Widget get remoteMediaView {
     if (_remoteRenderer.srcObject == null) {
       return const SizedBox.shrink();
     }
 
-    return Opacity(
-      opacity: _isRemoteCameraOn ? 1.0 : 0.0,
-      child: RTCVideoView(
-        _remoteRenderer,
-        objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-      ),
+    return RTCVideoView(
+      _remoteRenderer,
+      objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
     );
   }
 
@@ -157,6 +161,10 @@ class EasyRtcSession extends ChangeNotifier {
       }
 
       _localRenderer.srcObject = _localStream;
+      if (_localStream!.getVideoTracks().isNotEmpty) {
+        _hasVideoTrack = true;
+        _localRenderer.srcObject = _localStream;
+      }
 
       _isConnected = true;
       notifyListeners();
@@ -172,9 +180,6 @@ class EasyRtcSession extends ChangeNotifier {
     if (event.streams.isEmpty) return;
     _remoteStream = event.streams[0];
 
-    // Применяем уже выставленное локальное состояние "звук выключен" к
-    // только что пришедшему треку — важно, если toggleVolume() был
-    // вызван ДО того, как партнёр реально прислал медиапоток.
     for (final track in _remoteStream!.getAudioTracks()) {
       track.enabled = _isVolumeOn;
     }
@@ -221,27 +226,63 @@ class EasyRtcSession extends ChangeNotifier {
     if (_localStream == null || _peerConnection == null) return;
 
     if (_localVideoTrack == null) {
-      final videoStream = await navigator.mediaDevices.getUserMedia({
-        'video': {
-          'facingMode': 'user',
-          'width': {'ideal': 640},
-          'height': {'ideal': 480},
-        },
-      });
+      try {
+        final videoStream = await navigator.mediaDevices.getUserMedia({
+          'video': {
+            'facingMode': 'user',
+            'width': {'ideal': 640},
+            'height': {'ideal': 480},
+          },
+        });
 
-      final videoTracks = videoStream.getVideoTracks();
-      if (videoTracks.isEmpty) return;
+        final videoTracks = videoStream.getVideoTracks();
+        if (videoTracks.isEmpty) {
+          return;
+        }
 
-      _localVideoTrack = videoTracks.first;
-      await _peerConnection!.addTrack(_localVideoTrack!, videoStream);
-      _hasVideoTrack = true;
+        _localVideoTrack = videoTracks.first;
+        await _peerConnection!.addTrack(_localVideoTrack!, videoStream);
+        _hasVideoTrack = true;
+      } catch (_) {
+        return;
+      }
     }
 
     _isCameraOn = !_isCameraOn;
-    _localVideoTrack!.enabled = _isCameraOn;
+    _localVideoTrack?.enabled = _isCameraOn;
 
     _signaling.sendCameraToggled(_isCameraOn);
     notifyListeners();
+  }
+
+  Future<void> requestMicrophonePermission() async {
+    if (_localStream == null || _isPermissionPromptVisible) return;
+    _isPermissionPromptVisible = true;
+
+    try {
+      final stream = await navigator.mediaDevices.getUserMedia({
+        'audio': true,
+        'video': false,
+      });
+
+      for (final track in stream.getAudioTracks()) {
+        await _peerConnection?.addTrack(track, stream);
+      }
+
+      _hasAudioTrack = true;
+      _isMicrophoneOn = true;
+
+      for (final track in _localStream!.getAudioTracks()) {
+        track.enabled = true;
+      }
+
+      _signaling.sendMicrophoneToggled(true);
+      notifyListeners();
+    } catch (_) {
+      _isMicrophoneOn = false;
+    } finally {
+      _isPermissionPromptVisible = false;
+    }
   }
 
   void toggleMicrophone() {
