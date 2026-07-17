@@ -3,7 +3,7 @@
 class EasyRtcConfig {
   const EasyRtcConfig({
     this.requestAudio = true,
-    this.requestVideo = true,
+    this.requestVideo = false,
     this.cameraStartsOn = false,
     this.microphoneStartsOn = true,
     this.iceServers = const [

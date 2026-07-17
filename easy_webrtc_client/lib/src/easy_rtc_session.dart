@@ -93,13 +93,19 @@ class EasyRtcSession extends ChangeNotifier {
         )
       : null;
 
-  Widget get remoteMediaView => Offstage(
-    offstage: !_isRemoteCameraOn,
-    child: RTCVideoView(
-      _remoteRenderer,
-      objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-    ),
-  );
+  Widget get remoteMediaView {
+    if (_remoteRenderer.srcObject == null) {
+      return const SizedBox.shrink();
+    }
+
+    return Opacity(
+      opacity: _isRemoteCameraOn ? 1.0 : 0.0,
+      child: RTCVideoView(
+        _remoteRenderer,
+        objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+      ),
+    );
+  }
 
   Future<void> connect() async {
     if (_isConnected || _isConnecting) return;
@@ -132,20 +138,14 @@ class EasyRtcSession extends ChangeNotifier {
 
       _localStream = await navigator.mediaDevices.getUserMedia({
         'audio': config.requestAudio,
-        'video': config.requestVideo
-            ? {
-                'facingMode': 'user',
-                'width': {'ideal': 640},
-                'height': {'ideal': 480},
-              }
-            : false,
+        'video': false,
       });
 
-      _isCameraOn = config.cameraStartsOn && _hasVideoTrack;
+      _isCameraOn = false;
       _isMicrophoneOn = config.microphoneStartsOn && _hasAudioTrack;
 
       for (final track in _localStream!.getVideoTracks()) {
-        track.enabled = _isCameraOn;
+        track.enabled = false;
       }
       for (final track in _localStream!.getAudioTracks()) {
         track.enabled = _isMicrophoneOn;
@@ -178,6 +178,7 @@ class EasyRtcSession extends ChangeNotifier {
       track.enabled = _isVolumeOn;
     }
 
+    _isRemoteCameraOn = _remoteStream!.getVideoTracks().isNotEmpty;
     _remoteRenderer.srcObject = _remoteStream;
     notifyListeners();
   }
@@ -215,12 +216,40 @@ class EasyRtcSession extends ChangeNotifier {
     return true;
   }
 
-  void toggleCamera() {
-    if (!_hasVideoTrack || _localStream == null) return;
+  Future<void> toggleCamera() async {
+    if (_localStream == null || _peerConnection == null) return;
+
+    if (!_hasVideoTrack) {
+      final videoStream = await navigator.mediaDevices.getUserMedia({
+        'video': {
+          'facingMode': 'user',
+          'width': {'ideal': 640},
+          'height': {'ideal': 480},
+        },
+      });
+
+      final videoTracks = videoStream.getVideoTracks();
+      if (videoTracks.isEmpty) return;
+
+      await _peerConnection!.addTrack(videoTracks.first, videoStream);
+      _hasVideoTrack = true;
+    }
+
     _isCameraOn = !_isCameraOn;
     for (final track in _localStream!.getVideoTracks()) {
       track.enabled = _isCameraOn;
     }
+
+    final senders = await _peerConnection!.getSenders();
+    final videoTracks = senders
+        .where((sender) => sender.track?.kind == 'video')
+        .map((sender) => sender.track)
+        .whereType<MediaStreamTrack>();
+
+    for (final track in videoTracks) {
+      track.enabled = _isCameraOn;
+    }
+
     _signaling.sendCameraToggled(_isCameraOn);
     notifyListeners();
   }
